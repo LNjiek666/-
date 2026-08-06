@@ -428,3 +428,33 @@ if __name__ == "__main__":
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8000"))
     uvicorn.run(app, host=host, port=port)
+    from fastapi.responses import HTMLResponse
+import os
+
+# 读取HTML文件的通用函数
+def load_html(filename: str) -> str:
+    try:
+        # 获取当前脚本所在目录，确保能找到同级HTML文件
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        file_path = os.path.join(base_dir, filename)
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        return "<h1>❌ 页面未找到，请检查HTML文件是否已上传到项目根目录</h1>"
+    except Exception as e:
+        return f"<h1>❌ 加载页面失败: {str(e)}</h1>"
+
+# 学生端首页
+@app.get("/", response_class=HTMLResponse)
+async def serve_student():
+    return load_html("工程材料-材料的性能-互动课堂(莫兰迪)-上报版.html")
+
+# 教师端（带口令验证）
+@app.get("/teacher", response_class=HTMLResponse)
+async def serve_teacher(key: str = ""):
+    admin_key = os.getenv("ADMIN_KEY")
+    if not admin_key:
+        return "<h2>⚠️ 服务端未配置ADMIN_KEY环境变量，请联系管理员</h2>"
+    if key != admin_key:
+        return "<h2>🔒 管理员口令错误，请重新输入</h2>"
+    return load_html("teacher.html")
