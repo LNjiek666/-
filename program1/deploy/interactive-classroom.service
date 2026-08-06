@@ -1,0 +1,19 @@
+[Unit]
+Description=Interactive Classroom Answer System (FastAPI)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/interactive-classroom
+# 可选环境变量文件：ADMIN_KEY=你的强口令（systemd 会自动读取）
+EnvironmentFile=-/opt/interactive-classroom/.env
+ExecStart=/opt/interactive-classroom/.venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=3
+# 允许应用写入工作目录（SQLite 数据库文件在此）
+ReadWritePaths=/opt/interactive-classroom
+
+[Install]
+WantedBy=multi-user.target
