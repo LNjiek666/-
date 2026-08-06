@@ -434,14 +434,16 @@ import os
 # 读取HTML文件的通用函数
 def load_html(filename: str) -> str:
     try:
-        # 获取当前脚本所在目录，确保能找到同级HTML文件
         base_dir = os.path.dirname(os.path.abspath(__file__))
         file_path = os.path.join(base_dir, filename)
+        print(f"[DEBUG] 尝试加载文件: {file_path}")  # ← 加这一行
         with open(file_path, "r", encoding="utf-8") as f:
             return f.read()
     except FileNotFoundError:
+        print(f"[ERROR] 文件未找到: {file_path}")  # ← 加这一行
         return "<h1>❌ 页面未找到，请检查HTML文件是否已上传到项目根目录</h1>"
     except Exception as e:
+        print(f"[ERROR] 加载失败: {str(e)}")  # ← 加这一行
         return f"<h1>❌ 加载页面失败: {str(e)}</h1>"
 
 # 学生端首页
