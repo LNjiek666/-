@@ -15,6 +15,8 @@ class AnswerRecord(Base):
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)  # 自增主键
     student_name = Column(String(50), nullable=False, index=True)  # 学生姓名
+    scene_index = Column(Integer, nullable=True, index=True)  # 所属小节（COURSE.scenes 下标；为空表示旧数据/未分类）
+    scene_title = Column(String(200), nullable=True)  # 小节标题（冗余保存，便于旧数据展示）
     question_index = Column(Integer, nullable=False, index=True)  # 第几题（从 1 开始）
     question_title = Column(String(200), nullable=True)  # 题目内容/标题（可选）
     student_answer = Column(String(500), nullable=False)  # 学生的答案

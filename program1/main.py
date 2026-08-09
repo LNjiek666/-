@@ -16,7 +16,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from database import get_db, init_db
+from course_catalog import backfill_scene_info, load_course_catalog
+from database import SessionLocal, get_db, init_db
 from models import AnswerRecord, ProgressRecord, Student
 
 
@@ -33,8 +34,13 @@ DEFAULT_STUDENT_PASSWORD = "88888888"  # 新加入名单的学生默认密码
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    """服务启动时自动创建数据库表。"""
+    """服务启动时自动创建数据库表、补列，并为历史答题记录回填小节信息。"""
     init_db()
+    db = SessionLocal()
+    try:
+        backfill_scene_info(db)
+    finally:
+        db.close()
     yield
 
 
@@ -146,6 +152,8 @@ class AnswerSubmit(BaseModel):
     """单条答题记录的请求体（id 与 created_at 由服务端自动生成）。"""
 
     student_name: str = Field(..., description="学生姓名")
+    scene_index: int | None = Field(None, ge=0, description="所属小节（COURSE.scenes 下标，可选）")
+    scene_title: str | None = Field(None, description="小节标题（可选，便于旧数据展示）")
     question_index: int = Field(..., description="第几题（从 1 开始）")
     question_title: str | None = Field(None, description="题目内容/标题（可选）")
     student_answer: str = Field(..., description="学生的答案")
@@ -502,6 +510,86 @@ def stats_questions(db: Session = Depends(get_db)):
     # 按错误次数降序，同错数按题号升序
     result.sort(key=lambda x: (-x["error_count"], x["question_index"]))
     return result
+
+
+@app.get("/api/stats/question-groups")
+def stats_question_groups(db: Session = Depends(get_db)):
+    """每道题的答题情况（分小节）：每题每生取最后一次作答，去重统计正确/错误人数。
+
+    返回课程目录中全部随堂测验题目（未作答题目也返回 0 计数），
+    目录外的历史记录（含旧数据）归入“未分类”。
+    """
+    catalog = load_course_catalog()
+    records = db.query(AnswerRecord).order_by(AnswerRecord.id.asc()).all()
+    known_scene_ids = {s["scene_index"] for s in catalog["scenes"]}
+
+    # 每题每生最后一次作答（记录按 id 升序，后到者覆盖即为最新）
+    last: dict[tuple, AnswerRecord] = {}
+    for r in records:
+        scene_key = r.scene_index if r.scene_index in known_scene_ids else None
+        last[(scene_key, r.question_index, r.student_name)] = r
+
+    # 按（小节, 题号）汇总
+    grouped: dict[tuple, list[AnswerRecord]] = {}
+    for (scene_key, qidx, _student), r in last.items():
+        grouped.setdefault((scene_key, qidx), []).append(r)
+
+    def build_question(question_index, question_no, title, correct_answer, rows):
+        answer_count = len(rows)
+        correct_count = sum(1 for r in rows if r.is_correct)
+        return {
+            "question_index": question_index,
+            "question_no": question_no,
+            "question_title": title,
+            "correct_answer": correct_answer,
+            "answer_count": answer_count,
+            "correct_count": correct_count,
+            "error_count": answer_count - correct_count,
+            "accuracy": _safe_accuracy(correct_count, answer_count),
+        }
+
+    scenes = []
+    for scene in catalog["scenes"]:
+        questions = [
+            build_question(
+                q["question_index"],
+                q["question_index"] + 1,
+                q["question_title"],
+                q["correct_answer"],
+                grouped.get((scene["scene_index"], q["question_index"]), []),
+            )
+            for q in scene["questions"]
+        ]
+        scenes.append(
+            {
+                "scene_index": scene["scene_index"],
+                "scene_title": scene["scene_title"],
+                "questions": questions,
+            }
+        )
+
+    # 目录外记录（scene 为空或未知）归入“未分类”，按题号汇总
+    uncategorized: dict[int, dict] = {}
+    for (scene_key, qidx), rows in grouped.items():
+        if scene_key is not None:
+            continue
+        last_row = rows[-1]  # 已按 id 升序，取最近一条用于展示题目与答案
+        uncategorized[qidx] = build_question(
+            qidx,
+            qidx,
+            last_row.question_title or "未命名题目",
+            last_row.correct_answer or "",
+            rows,
+        )
+    if uncategorized:
+        scenes.append(
+            {
+                "scene_index": None,
+                "scene_title": "未分类",
+                "questions": [uncategorized[k] for k in sorted(uncategorized)],
+            }
+        )
+    return {"scenes": scenes}
 
 
 @app.get("/api/stats/students")

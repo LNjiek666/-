@@ -146,6 +146,31 @@ def test_submit_single():
     return f"id={data['id']}"
 
 
+def test_submit_with_scene():
+    # 用课程目录中的真实题目提交（含小节信息），并模拟李四“先答错、再改对”
+    from course_catalog import load_course_catalog
+
+    scene = load_course_catalog()["scenes"][0]  # 第 2 节 随堂测验：强度与塑性
+    q = scene["questions"][0]
+    base = {
+        "scene_index": scene["scene_index"],
+        "scene_title": scene["scene_title"],
+        "question_index": q["question_index"],
+        "question_title": q["question_title"],
+        "correct_answer": q["correct_answer"],
+    }
+    payload = {**base, "student_name": STUDENT_3, "student_answer": q["correct_answer"],
+               "is_correct": True, "attempt_count": 1}
+    expect(api("POST", "/api/answers/submit", json=payload), 200, "带小节信息提交")
+    payload = {**base, "student_name": STUDENT_2, "student_answer": "错误作答（演示）",
+               "is_correct": False, "attempt_count": 1}
+    expect(api("POST", "/api/answers/submit", json=payload), 200, "带小节信息提交（答错）")
+    payload = {**base, "student_name": STUDENT_2, "student_answer": q["correct_answer"],
+               "is_correct": True, "attempt_count": 2}
+    expect(api("POST", "/api/answers/submit", json=payload), 200, "带小节信息重复提交")
+    return f"scene_index={scene['scene_index']}, question_index={q['question_index']}"
+
+
 def test_submit_not_in_roster():
     body = {
         "student_name": "未知学生",
@@ -182,19 +207,38 @@ def test_batch_empty():
 def test_stats_overview():
     data = expect(api("GET", "/api/stats/overview"), 200, "整体统计")
     assert data["total_students"] == 3, f"答题学生数应为 3，实际 {data}"
-    assert data["total_answers"] == 4, f"答题总数应为 4（1 单条 + 3 批量），实际 {data}"
-    assert data["overall_accuracy"] == 75.0, f"整体正确率应为 75.0，实际 {data}"
-    assert data["today_answers"] == 4, f"今日答题数应为 4，实际 {data}"
+    assert data["total_answers"] == 7, f"答题总数应为 7（1 单条 + 3 带小节 + 3 批量），实际 {data}"
+    assert data["overall_accuracy"] == 71.43, f"整体正确率应为 71.43，实际 {data}"
+    assert data["today_answers"] == 7, f"今日答题数应为 7，实际 {data}"
     return json.dumps(data, ensure_ascii=False)
 
 
 def test_stats_questions():
     data = expect(api("GET", "/api/stats/questions"), 200, "逐题统计")
-    assert isinstance(data, list) and len(data) == 3, f"应有 3 道题，实际 {data}"
-    assert data[0]["question_index"] == 1, f"错误次数最多的应排第一（第 1 题），实际 {data}"
+    assert isinstance(data, list) and len(data) == 4, f"应有 4 道题，实际 {data}"
+    assert data[0]["question_index"] == 0, f"错误次数最多的应排第一（第 0 题），实际 {data}"
     q1 = next(q for q in data if q["question_index"] == 1)
     assert q1["answer_count"] == 2 and q1["error_count"] == 1 and q1["accuracy"] == 50.0, f"第 1 题统计错误，实际 {q1}"
     return json.dumps(data, ensure_ascii=False)
+
+
+def test_stats_question_groups():
+    data = expect(api("GET", "/api/stats/question-groups"), 200, "分小节题目统计")
+    scenes = data.get("scenes", [])
+    assert len(scenes) == 5, f"应有 4 个测验小节 + 1 个未分类，实际 {len(scenes)}"
+    by_idx = {s.get("scene_index"): s for s in scenes}
+    s2 = by_idx.get(2)
+    assert s2 and s2["scene_title"].startswith("第 2 节"), f"应包含第 2 节测验，实际 {s2}"
+    assert len(s2["questions"]) == 5, f"第 2 节测验应列出全部 5 道题，实际 {len(s2['questions'])}"
+    q0 = s2["questions"][0]
+    assert q0["answer_count"] == 2, f"每题每生去重后应为 2 人作答，实际 {q0}"
+    assert q0["correct_count"] == 2 and q0["error_count"] == 0, f"李四改对后应记为正确，实际 {q0}"
+    assert q0["accuracy"] == 100.0, f"正确率应为 100.0，实际 {q0}"
+    assert q0["correct_answer"], "应返回正确答案"
+    uncat = next((s for s in scenes if s.get("scene_index") is None), None)
+    assert uncat and uncat["scene_title"] == "未分类", "应包含未分类分组"
+    assert len(uncat["questions"]) == 3, f"未分类应为 3 道旧题目，实际 {len(uncat['questions'])}"
+    return f"scenes={len(scenes)}, scene2_q0={json.dumps(q0, ensure_ascii=False)}"
 
 
 def test_stats_students():
@@ -222,6 +266,104 @@ def test_answer_detail_unknown():
     return "返回 []"
 
 
+def test_progress_mark():
+    data = expect(api("POST", "/api/progress/mark", json={
+        "student_name": STUDENT_1, "scene_index": 0, "total_scenes": 10, "completed": True,
+    }), 200, "标记第 1 节完成")
+    assert data.get("completed") is True, f"completed 应为 True，实际 {data}"
+    data = expect(api("POST", "/api/progress/mark", json={
+        "student_name": STUDENT_1, "scene_index": 1, "total_scenes": 10, "completed": True,
+    }), 200, "标记第 2 节完成")
+    assert data.get("scene_index") == 1, f"scene_index 应为 1，实际 {data}"
+    return f"scene_index={data['scene_index']}"
+
+
+def test_progress_sync():
+    data = expect(api("POST", "/api/progress/sync", json={
+        "student_name": STUDENT_2, "total_scenes": 10, "completed_scenes": [0, 1, 2],
+    }), 200, "全量同步进度")
+    assert data.get("synced") == 3, f"应同步 3 节，实际 {data}"
+    return f"synced={data['synced']}"
+
+
+def test_progress_stats():
+    data = expect(api("GET", "/api/stats/progress"), 200, "进度统计")
+    assert data.get("total_scenes") == 10, f"总节数应为 10，实际 {data}"
+    by_name = {s["student_name"]: s for s in data.get("students", [])}
+    assert by_name[STUDENT_1]["completed_count"] == 2, f"{STUDENT_1} 应完成 2 节，实际 {by_name[STUDENT_1]}"
+    assert by_name[STUDENT_2]["completed_count"] == 3, f"{STUDENT_2} 应完成 3 节，实际 {by_name[STUDENT_2]}"
+    assert by_name[STUDENT_3]["completed_count"] == 0, f"{STUDENT_3} 应完成 0 节，实际 {by_name[STUDENT_3]}"
+    assert by_name[STUDENT_1]["completion_rate"] == 20.0, f"完成率应为 20.0，实际 {by_name[STUDENT_1]}"
+    return json.dumps(data, ensure_ascii=False)
+
+
+def test_progress_mark_unmark():
+    data = expect(api("POST", "/api/progress/mark", json={
+        "student_name": STUDENT_1, "scene_index": 1, "total_scenes": 10, "completed": False,
+    }), 200, "取消第 2 节完成")
+    assert data.get("completed") is False, f"completed 应为 False，实际 {data}"
+    data = expect(api("GET", "/api/stats/progress"), 200, "取消后进度统计")
+    by_name = {s["student_name"]: s for s in data.get("students", [])}
+    assert by_name[STUDENT_1]["completed_count"] == 1, f"取消后应剩 1 节，实际 {by_name[STUDENT_1]}"
+    return "completed_count=1"
+
+
+def test_progress_mark_not_in_roster():
+    expect(api("POST", "/api/progress/mark", json={
+        "student_name": "不在名单", "scene_index": 0, "total_scenes": 10, "completed": True,
+    }), 403, "名单外学生上报进度")
+    return "返回 403"
+
+
+def test_admin_deactivate():
+    data = expect(api("POST", "/api/admin/students/deactivate", json={
+        "admin_key": ADMIN_KEY, "student_name": STUDENT_2,
+    }), 200, "移出名册")
+    assert data.get("deactivated") == STUDENT_2, f"deactivated 应为 {STUDENT_2}，实际 {data}"
+    data = expect(api("GET", "/api/admin/students", params={"admin_key": ADMIN_KEY}), 200, "移出后名单")
+    s2 = next(s for s in data["students"] if s["name"] == STUDENT_2)
+    assert s2["is_active"] is False, f"应停用，实际 {s2}"
+    expect(api("POST", "/api/auth/login", json={"student_name": STUDENT_2, "password": DEFAULT_PWD}),
+           404, "停用后登录")
+    return "已停用且无法登录"
+
+
+def test_admin_reactivate():
+    data = expect(api("POST", "/api/admin/students/reactivate", json={
+        "admin_key": ADMIN_KEY, "student_name": STUDENT_2,
+    }), 200, "重新加入")
+    assert data.get("reactivated") == STUDENT_2, f"reactivated 应为 {STUDENT_2}，实际 {data}"
+    expect(api("POST", "/api/auth/login", json={"student_name": STUDENT_2, "password": DEFAULT_PWD}),
+           200, "重新加入后登录")
+    return "已恢复登录"
+
+
+def test_admin_delete_student():
+    before = expect(api("GET", "/api/answers/detail", params={"student_name": STUDENT_3}), 200, "删除前明细")
+    assert len(before) == 2, "删除前应有 2 条记录"
+    data = expect(api("POST", "/api/admin/students/delete", json={
+        "admin_key": ADMIN_KEY, "student_name": STUDENT_3,
+    }), 200, "删除学生")
+    assert data.get("deleted") == STUDENT_3, f"deleted 应为 {STUDENT_3}，实际 {data}"
+    assert data.get("removed_answers") == 2, f"应删除 2 条答题记录，实际 {data}"
+    removed = data.get("removed_answers")
+    data = expect(api("GET", "/api/admin/students", params={"admin_key": ADMIN_KEY}), 200, "删除后名单")
+    names = [s["name"] for s in data["students"]]
+    assert STUDENT_3 not in names, f"名单中不应再有 {STUDENT_3}"
+    assert expect(api("GET", "/api/answers/detail", params={"student_name": STUDENT_3}), 200, "删除后明细") == []
+    return f"removed_answers={removed}"
+
+
+def test_admin_clear_all():
+    data = expect(api("POST", "/api/admin/answers/clear", json={"admin_key": ADMIN_KEY}), 200, "一键清除")
+    assert data.get("cleared_answers") == 5, f"应清除 5 条答题记录，实际 {data}"
+    data = expect(api("GET", "/api/stats/overview"), 200, "清除后总览")
+    assert data["total_answers"] == 0, f"清除后总答题数应为 0，实际 {data}"
+    data = expect(api("GET", "/api/stats/progress"), 200, "清除后进度")
+    assert all(s["completed_count"] == 0 for s in data["students"]), f"清除后进度应全部归零，实际 {data}"
+    return "cleared_answers=3, progress reset"
+
+
 ALL_TESTS = [
     ("GET / 学生端首页", test_root_page),
     ("POST /api/admin/students 上传名单", test_upload_roster),
@@ -232,14 +374,25 @@ ALL_TESTS = [
     ("POST /api/auth/login 名单外学生", test_login_not_in_roster),
     ("POST /api/auth/change-password 修改密码", test_change_password),
     ("POST /api/answers/submit 单条提交", test_submit_single),
+    ("POST /api/answers/submit 带小节提交", test_submit_with_scene),
     ("POST /api/answers/submit 名单外提交", test_submit_not_in_roster),
     ("POST /api/answers/batch 批量提交", test_batch_submit),
     ("POST /api/answers/batch 空批量", test_batch_empty),
     ("GET /api/stats/overview 整体统计", test_stats_overview),
     ("GET /api/stats/questions 逐题统计", test_stats_questions),
+    ("GET /api/stats/question-groups 分小节题目统计", test_stats_question_groups),
     ("GET /api/stats/students 逐学生统计", test_stats_students),
     ("GET /api/answers/detail 学生详情", test_answer_detail),
     ("GET /api/answers/detail 未知学生", test_answer_detail_unknown),
+    ("POST /api/progress/mark 标记完成", test_progress_mark),
+    ("POST /api/progress/sync 全量同步", test_progress_sync),
+    ("GET /api/stats/progress 进度统计", test_progress_stats),
+    ("POST /api/progress/mark 取消完成", test_progress_mark_unmark),
+    ("POST /api/progress/mark 名单外学生", test_progress_mark_not_in_roster),
+    ("POST /api/admin/students/deactivate 移出名册", test_admin_deactivate),
+    ("POST /api/admin/students/reactivate 重新加入", test_admin_reactivate),
+    ("POST /api/admin/students/delete 删除学生", test_admin_delete_student),
+    ("POST /api/admin/answers/clear 一键清除", test_admin_clear_all),
 ]
 
 

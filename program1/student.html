@@ -1160,7 +1160,7 @@ function bindStudentGate() {
   const loginTipModal = document.getElementById("loginTipModal");
   if (loginTipModal) loginTipModal.addEventListener("click", (e) => { if (e.target === loginTipModal) closeLoginTip(); });
 }
-async function reportAnswer(questionIndex, questionTitle, studentAnswer, correctAnswer, isCorrect, attemptCount) {
+async function reportAnswer(questionIndex, questionTitle, studentAnswer, correctAnswer, isCorrect, attemptCount, sceneIndex, sceneTitle) {
     const studentName = getStudentName() || '未知学生';
     try {
         await fetch(API_BASE + '/api/answers/submit', {
@@ -1168,6 +1168,8 @@ async function reportAnswer(questionIndex, questionTitle, studentAnswer, correct
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 student_name: studentName,
+                scene_index: sceneIndex ?? null,
+                scene_title: sceneTitle ?? null,
                 question_index: questionIndex,
                 question_title: questionTitle,
                 student_answer: studentAnswer,
@@ -1359,7 +1361,7 @@ function renderQuiz(sceneIdx, scene, card) {
             const isCorrect = oi === q.answer;
             const prev = quizState[sceneIdx][qi] || {};
             quizState[sceneIdx][qi] = { ...prev, sel: oi, done: true, correct: isCorrect, attempts: (prev.attempts || 0) + 1 };
-            reportAnswer(qi, q.q, q.options[oi], q.options[q.answer], isCorrect, quizState[sceneIdx][qi].attempts);
+            reportAnswer(qi, q.q, q.options[oi], q.options[q.answer], isCorrect, quizState[sceneIdx][qi].attempts, sceneIdx, scene.title);
           }
           render(false);
         };
@@ -1373,7 +1375,7 @@ function renderQuiz(sceneIdx, scene, card) {
           const correct = cur.length === ansArr.length && ansArr.every(a => cur.includes(a));
           const prev = quizState[sceneIdx][qi] || {};
           quizState[sceneIdx][qi] = { ...prev, sel: cur, done: true, correct, attempts: (prev.attempts || 0) + 1 };
-          reportAnswer(qi, q.q, cur.map(i => q.options[i]).join("、"), ansArr.map(i => q.options[i]).join("、"), correct, quizState[sceneIdx][qi].attempts);
+          reportAnswer(qi, q.q, cur.map(i => q.options[i]).join("、"), ansArr.map(i => q.options[i]).join("、"), correct, quizState[sceneIdx][qi].attempts, sceneIdx, scene.title);
           render(false);
         };
         qWrap.appendChild(submit);
@@ -1390,9 +1392,9 @@ function renderQuiz(sceneIdx, scene, card) {
           qWrap.appendChild(refBtn);
         }
         const okBtn = document.createElement("button"); okBtn.className = "btn quiz-actions"; okBtn.style.marginRight = "8px"; okBtn.textContent = "自评：我答对了 ✓";
-        okBtn.onclick = () => { if (!requireStudentName()) return; const prev = quizState[sceneIdx][qi] || {}; quizState[sceneIdx][qi] = { ...prev, done: true, correct: true, attempts: (prev.attempts || 0) + 1 }; reportAnswer(qi, q.q, (prev.text || "").trim(), q.reference || q.explanation || "", true, quizState[sceneIdx][qi].attempts); render(false); };
+        okBtn.onclick = () => { if (!requireStudentName()) return; const prev = quizState[sceneIdx][qi] || {}; quizState[sceneIdx][qi] = { ...prev, done: true, correct: true, attempts: (prev.attempts || 0) + 1 }; reportAnswer(qi, q.q, (prev.text || "").trim(), q.reference || q.explanation || "", true, quizState[sceneIdx][qi].attempts, sceneIdx, scene.title); render(false); };
         const noBtn = document.createElement("button"); noBtn.className = "btn quiz-actions"; noBtn.textContent = "没答好 ✗";
-        noBtn.onclick = () => { if (!requireStudentName()) return; const prev = quizState[sceneIdx][qi] || {}; quizState[sceneIdx][qi] = { ...prev, done: true, correct: false, attempts: (prev.attempts || 0) + 1 }; reportAnswer(qi, q.q, (prev.text || "").trim(), q.reference || q.explanation || "", false, quizState[sceneIdx][qi].attempts); render(false); };
+        noBtn.onclick = () => { if (!requireStudentName()) return; const prev = quizState[sceneIdx][qi] || {}; quizState[sceneIdx][qi] = { ...prev, done: true, correct: false, attempts: (prev.attempts || 0) + 1 }; reportAnswer(qi, q.q, (prev.text || "").trim(), q.reference || q.explanation || "", false, quizState[sceneIdx][qi].attempts, sceneIdx, scene.title); render(false); };
         qWrap.appendChild(okBtn); qWrap.appendChild(noBtn);
       }
     }

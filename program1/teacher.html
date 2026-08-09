@@ -116,6 +116,7 @@
   <div class="flex items-center gap-2">
     <button id="tabDashboardBtn" onclick="showTab('dashboard')" class="px-4 py-2 rounded-xl text-sm font-medium transition shadow-sm bg-[#8d8b82] text-white">数据看板</button>
     <button id="tabProgressBtn" onclick="showTab('progress')" class="px-4 py-2 rounded-xl text-sm font-medium transition shadow-sm bg-white border border-[#e2dbd2] text-[#6b6760] hover:border-[#c4a882]">完成进度</button>
+    <button id="tabQuestionsBtn" onclick="showTab('questions')" class="px-4 py-2 rounded-xl text-sm font-medium transition shadow-sm bg-white border border-[#e2dbd2] text-[#6b6760] hover:border-[#c4a882]">答题情况</button>
   </div>
 
   <section id="dashboardView" class="space-y-6">
@@ -271,6 +272,21 @@
       </div>
     </div>
   </section>
+
+  <!-- 每道题答题情况（分小节） -->
+  <section id="questionsView" class="hidden space-y-6">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h2 class="text-base sm:text-lg font-bold text-[#5f5d57]">📊 每道题的答题情况</h2>
+        <p class="text-xs text-[#8d8b82] mt-1">按小节分组 · 每题每生取最后一次作答统计 · 鼠标悬停题目可查看完整题目与正确答案</p>
+      </div>
+      <span id="questionsSummary" class="text-xs text-[#8d8b82]">--</span>
+    </div>
+    <div id="questionsWrap" class="space-y-6"></div>
+    <div id="questionsEmpty" class="hidden py-14 text-center text-[#b5aca1]">
+      <p id="questionsEmptyText" class="text-sm">暂无答题数据</p>
+    </div>
+  </section>
 </main>
 
 <!-- 学生答题详情模态框 -->
@@ -312,6 +328,7 @@ const state = {
   sortDir: "desc",
   loading: false,
   charts: { wrong: null, dist: null },
+  questionGroups: null,
 };
 
 /* ---------- 工具函数 ---------- */
@@ -392,10 +409,11 @@ async function loadAllData(manual = false) {
   hideError();
 
   try {
-    const [overview, questions, students] = await Promise.allSettled([
+    const [overview, questions, students, questionGroups] = await Promise.allSettled([
       fetchJSON(API_BASE + "/api/stats/overview"),
       fetchJSON(API_BASE + "/api/stats/questions"),
       fetchJSON(API_BASE + "/api/stats/students"),
+      fetchJSON(API_BASE + "/api/stats/question-groups"),
     ]);
 
     let failed = null;
@@ -423,6 +441,14 @@ async function loadAllData(manual = false) {
       state.students = [];
       renderTableFallback();
       renderDistChartFallback();
+    }
+
+    if (questionGroups.status === "fulfilled") {
+      state.questionGroups = questionGroups.value;
+      renderQuestionGroups(questionGroups.value);
+    } else {
+      failed = failed || questionGroups.reason;
+      renderQuestionGroupsFallback();
     }
 
     if (failed) showError(friendlyMessage(failed));
@@ -970,10 +996,13 @@ function showTab(name) {
   activeTab = name;
   const dash = document.getElementById("dashboardView");
   const prog = document.getElementById("progressView");
+  const qv = document.getElementById("questionsView");
   const btnD = document.getElementById("tabDashboardBtn");
   const btnP = document.getElementById("tabProgressBtn");
+  const btnQ = document.getElementById("tabQuestionsBtn");
   if (dash) dash.classList.toggle("hidden", name !== "dashboard");
   if (prog) prog.classList.toggle("hidden", name !== "progress");
+  if (qv) qv.classList.toggle("hidden", name !== "questions");
   if (btnD) {
     btnD.className = "px-4 py-2 rounded-xl text-sm font-medium transition shadow-sm " +
       (name === "dashboard" ? "bg-[#8d8b82] text-white" : "bg-white border border-[#e2dbd2] text-[#6b6760] hover:border-[#c4a882]");
@@ -982,7 +1011,12 @@ function showTab(name) {
     btnP.className = "px-4 py-2 rounded-xl text-sm font-medium transition shadow-sm " +
       (name === "progress" ? "bg-[#8d8b82] text-white" : "bg-white border border-[#e2dbd2] text-[#6b6760] hover:border-[#c4a882]");
   }
+  if (btnQ) {
+    btnQ.className = "px-4 py-2 rounded-xl text-sm font-medium transition shadow-sm " +
+      (name === "questions" ? "bg-[#8d8b82] text-white" : "bg-white border border-[#e2dbd2] text-[#6b6760] hover:border-[#c4a882]");
+  }
   if (name === "progress") loadProgress();
+  if (name === "questions" && !state.questionGroups && !state.loading) loadAllData(false);
 }
 
 function progressBarHtml(rate) {
@@ -1063,6 +1097,97 @@ function renderProgress(data) {
       "</tr>"
     );
   }).join("");
+}
+
+/* ---------- 每道题答题情况（分小节） ---------- */
+
+function renderQuestionGroups(data) {
+  const wrap = document.getElementById("questionsWrap");
+  const empty = document.getElementById("questionsEmpty");
+  const emptyText = document.getElementById("questionsEmptyText");
+  const summary = document.getElementById("questionsSummary");
+  const scenes = (data && Array.isArray(data.scenes)) ? data.scenes : [];
+
+  const totalQuestions = scenes.reduce((n, s) => n + ((s.questions || []).length), 0);
+  summary.textContent = "共 " + scenes.length + " 个小节 · " + totalQuestions + " 道题";
+
+  if (!scenes.length) {
+    wrap.innerHTML = "";
+    emptyText.textContent = "暂无答题数据";
+    empty.classList.remove("hidden");
+    return;
+  }
+  empty.classList.add("hidden");
+
+  wrap.innerHTML = scenes.map((scene, si) => {
+    const qs = scene.questions || [];
+    const answered = qs.reduce((n, q) => n + Number(q.answer_count || 0), 0);
+    const isUncategorized = scene.scene_index === null || scene.scene_index === undefined;
+    const badge = isUncategorized
+      ? '<span class="text-xs bg-[#f1ece4] text-[#8d8b82] px-2.5 py-1 rounded-full">历史记录 · 未匹配到小节</span>'
+      : '<span class="text-xs bg-[#e8efe6] text-[#6f9a76] px-2.5 py-1 rounded-full">' + answered + ' 人次作答</span>';
+    return (
+      '<section class="bg-white rounded-2xl shadow-sm border border-[#e8e1d9] overflow-hidden">' +
+      '<div class="flex flex-wrap items-center justify-between gap-2 px-5 py-4 border-b border-[#f0eae2]">' +
+      '<h3 class="text-base font-bold text-[#5f5d57]">' + esc(scene.scene_title || ("小节 " + (si + 1))) + '</h3>' +
+      badge +
+      "</div>" +
+      '<div class="overflow-x-auto">' +
+      '<table class="w-full text-sm min-w-[780px]">' +
+      '<thead class="bg-[#f7f3ee] text-[#8d8b82] text-left"><tr>' +
+      '<th class="px-5 py-3 font-medium">题号</th>' +
+      '<th class="px-5 py-3 font-medium">题目（悬停查看完整题目与答案）</th>' +
+      '<th class="px-5 py-3 font-medium text-center">答题人数</th>' +
+      '<th class="px-5 py-3 font-medium text-center">正确人数</th>' +
+      '<th class="px-5 py-3 font-medium text-center">错误人数</th>' +
+      '<th class="px-5 py-3 font-medium">正确率</th>' +
+      "</tr></thead>" +
+      '<tbody class="divide-y divide-[#f0eae2]">' +
+      qs.map(questionRowHtml).join("") +
+      "</tbody></table></div>" +
+      "</section>"
+    );
+  }).join("");
+}
+
+function questionRowHtml(q) {
+  const acc = Number(q.accuracy || 0);
+  const tip = "完整题目：" + (q.question_title || "未命名题目") + "\n正确答案：" + (q.correct_answer || "—");
+  const no = (q.question_no !== undefined && q.question_no !== null)
+    ? q.question_no : (Number(q.question_index || 0) + 1);
+  return (
+    '<tr class="hover:bg-[#faf7f3] transition">' +
+    '<td class="px-5 py-3.5 text-[#b5aca1] whitespace-nowrap">第 ' + no + " 题</td>" +
+    '<td class="px-5 py-3.5 max-w-[360px] truncate text-[#4a4845] cursor-help" title="' + esc(tip) + '">' +
+    esc(short(q.question_title || "未命名题目", 32)) + "</td>" +
+    '<td class="px-5 py-3.5 text-center text-[#6b6760] whitespace-nowrap">' + Number(q.answer_count || 0) + " 人</td>" +
+    '<td class="px-5 py-3.5 text-center text-[#6f9a76] font-semibold whitespace-nowrap">' + Number(q.correct_count || 0) + " 人</td>" +
+    '<td class="px-5 py-3.5 text-center text-[#b06666] font-semibold whitespace-nowrap">' + Number(q.error_count || 0) + " 人</td>" +
+    '<td class="px-5 py-3.5">' + accuracyBarHtml(acc) + "</td>" +
+    "</tr>"
+  );
+}
+
+function accuracyBarHtml(rate) {
+  const pct = Math.max(0, Math.min(100, Number(rate || 0)));
+  const color = pct >= 80 ? "#6f9a76" : pct >= 50 ? "#b08a4d" : "#b06666";
+  return (
+    '<div class="flex items-center gap-2 min-w-[130px]">' +
+    '<div class="flex-1 h-2 rounded-full bg-[#f0eae2] overflow-hidden">' +
+    '<div class="h-full rounded-full" style="width:' + pct + "%;background:" + color + '"></div></div>' +
+    '<span class="text-xs text-[#8d8b82] whitespace-nowrap w-12 text-right">' + pct.toFixed(1) + "%</span></div>"
+  );
+}
+
+function renderQuestionGroupsFallback() {
+  const wrap = document.getElementById("questionsWrap");
+  const empty = document.getElementById("questionsEmpty");
+  const emptyText = document.getElementById("questionsEmptyText");
+  if (wrap) wrap.innerHTML = "";
+  if (empty) {
+    emptyText.textContent = "加载答题情况失败，请点击“刷新”重试";
+    empty.classList.remove("hidden");
+  }
 }
 
 async function refreshAll() {

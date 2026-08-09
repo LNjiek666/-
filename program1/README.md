@@ -28,7 +28,7 @@ program1/
 ├── models.py       # SQLAlchemy 数据模型（AnswerRecord / Student）
 ├── seed_data.py    # 演示数据脚本：10 条答题记录 + 5 名学生账号（可选执行）
 ├── teacher.html    # 教师数据看板：统计图表 + 学生明细 + 名单管理
-├── 工程材料-材料的性能-互动课堂(莫兰迪)-上报版.html  # 学生端互动课件（答题上报版，由后端 / 托管）
+├── student.html                                    # 学生端互动课件（答题上报版，由后端 / 与 /student.html 托管）
 ├── 工程材料-材料的性能-互动课堂(莫兰迪).html         # 学生端原始课件（不含上报功能）
 ├── test_api.py     # 自动化接口测试脚本（requests）
 ├── requirements.txt # Python 依赖
@@ -57,7 +57,7 @@ python seed_data.py
 python main.py
 
 # 5. 打开页面
-#   学生端：浏览器访问 http://localhost:8000/
+#   学生端：浏览器访问 http://localhost:8000/ 或 http://localhost:8000/student.html
 #   教师端：浏览器访问 http://localhost:8000/teacher
 
 # 6.（可选）运行自动化接口测试
@@ -69,7 +69,7 @@ python test_api.py
 - 后端首次启动会自动创建数据表；数据库文件为 `answer_records.db`。
 - 学生默认密码为 `88888888`；教师管理口令默认 `teacher888`，可通过环境变量 `ADMIN_KEY` 覆盖后重启生效。
 - 学生端与教师端页面中的 API 地址自动取当前站点地址（`window.location.origin`），部署后无需修改代码。
-- 学生端页面由后端在根路径 `/` 托管；教师端页面由后端在 `/teacher` 托管。
+- 学生端页面由后端在 `/` 与 `/student.html` 托管（兼容带 `.html` 后缀的链接）；教师端页面由后端在 `/teacher` 托管。
 
 ## API 接口文档
 
@@ -334,11 +334,11 @@ curl -X POST http://localhost:8000/api/answers/submit \
 
 ---
 
-### 其他：学生端首页
+### 其他：学生端页面
 
-`GET /`
+`GET /` 或 `GET /student.html`
 
-返回“上报版”学生端互动课件 HTML 页面，方便局域网内学生直接访问。
+返回“上报版”学生端互动课件 HTML 页面；`/student.html` 用于兼容二维码 / 旧链接中带 `.html` 后缀的地址。
 
 ## 上线部署
 

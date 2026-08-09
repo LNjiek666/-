@@ -30,7 +30,20 @@ def get_db():
 
 
 def init_db():
-    """初始化数据库：创建所有尚未存在的表（启动时自动调用）。"""
+    """初始化数据库：创建所有尚未存在的表（启动时自动调用），并补充新列。"""
     import models  # 导入模型，确保表结构注册到 Base.metadata
 
     Base.metadata.create_all(bind=engine)
+    _migrate_columns()
+
+
+def _migrate_columns():
+    """SQLite 轻量迁移：为已存在的 answer_records 表补充新列（幂等，可重复执行）。"""
+    from sqlalchemy import text
+
+    with engine.begin() as conn:
+        cols = {row[1] for row in conn.execute(text("PRAGMA table_info(answer_records)"))}
+        if "scene_index" not in cols:
+            conn.execute(text("ALTER TABLE answer_records ADD COLUMN scene_index INTEGER"))
+        if "scene_title" not in cols:
+            conn.execute(text("ALTER TABLE answer_records ADD COLUMN scene_title VARCHAR(200)"))
