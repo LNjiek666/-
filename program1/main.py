@@ -2,7 +2,7 @@
 # 学生答题数据收集后端：FastAPI 主应用，包含全部路由
 
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, datetime
 import hashlib
 import os
 import re
@@ -17,7 +17,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import get_db, init_db
-from models import AnswerRecord, Student
+from models import AnswerRecord, ProgressRecord, Student
 
 
 # 学生端页面（改造后的互动课堂 HTML，服务根路径直接打开）
@@ -111,6 +111,36 @@ def _ensure_allowed_student(db: Session, student_name: str) -> None:
 # ---------------------------------------------------------------------------
 # 请求体模型
 # ---------------------------------------------------------------------------
+
+class ProgressMarkRequest(BaseModel):
+    """单节进度上报：completed=True 标记完成，False 取消完成。"""
+
+    student_name: str = Field(..., min_length=1, max_length=50, description="学生姓名")
+    scene_index: int = Field(..., ge=0, description="第几节（从 0 开始）")
+    total_scenes: int = Field(1, ge=1, description="课程总节数")
+    completed: bool = Field(True, description="是否标记完成")
+
+
+class ProgressSyncRequest(BaseModel):
+    """整本课程进度同步：用 completed_scenes 全量替换该学生的完成进度。"""
+
+    student_name: str = Field(..., min_length=1, max_length=50, description="学生姓名")
+    total_scenes: int = Field(1, ge=1, description="课程总节数")
+    completed_scenes: list[int] = Field(default_factory=list, description="已完成的节索引列表")
+
+
+class AdminStudentActionRequest(BaseModel):
+    """教师端对学生账号的操作请求。"""
+
+    admin_key: str = Field(..., description="教师管理口令")
+    student_name: str = Field(..., min_length=1, max_length=50, description="学生姓名")
+
+
+class AdminClearRequest(BaseModel):
+    """教师端一键清除请求。"""
+
+    admin_key: str = Field(..., description="教师管理口令")
+
 
 class AnswerSubmit(BaseModel):
     """单条答题记录的请求体（id 与 created_at 由服务端自动生成）。"""
@@ -255,6 +285,70 @@ def list_students(admin_key: str, db: Session = Depends(get_db)):
     return {"students": [{"name": s.name, "is_active": s.is_active} for s in rows]}
 
 
+@app.post("/api/admin/students/delete")
+def delete_student(payload: AdminStudentActionRequest, db: Session = Depends(get_db)):
+    """删除学生：永久删除账号，并连同其答题记录、完成进度一并删除。"""
+    if payload.admin_key != get_admin_key():
+        raise HTTPException(status_code=403, detail="管理口令错误")
+    name = payload.student_name.strip()
+    student = db.query(Student).filter(Student.name == name).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="名单中没有该学生")
+    removed_answers = (
+        db.query(AnswerRecord).filter(AnswerRecord.student_name == name).delete(synchronize_session=False)
+    )
+    removed_progress = (
+        db.query(ProgressRecord).filter(ProgressRecord.student_name == name).delete(synchronize_session=False)
+    )
+    db.delete(student)
+    db.commit()
+    return {
+        "status": "ok",
+        "deleted": name,
+        "removed_answers": removed_answers,
+        "removed_progress": removed_progress,
+    }
+
+
+@app.post("/api/admin/students/deactivate")
+def deactivate_student(payload: AdminStudentActionRequest, db: Session = Depends(get_db)):
+    """移出名册：停用账号、保留数据，该生无法登录答题。"""
+    if payload.admin_key != get_admin_key():
+        raise HTTPException(status_code=403, detail="管理口令错误")
+    name = payload.student_name.strip()
+    student = db.query(Student).filter(Student.name == name).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="名单中没有该学生")
+    student.is_active = False
+    db.commit()
+    return {"status": "ok", "deactivated": name}
+
+
+@app.post("/api/admin/students/reactivate")
+def reactivate_student(payload: AdminStudentActionRequest, db: Session = Depends(get_db)):
+    """重新加入名册：恢复登录（保留原密码）。"""
+    if payload.admin_key != get_admin_key():
+        raise HTTPException(status_code=403, detail="管理口令错误")
+    name = payload.student_name.strip()
+    student = db.query(Student).filter(Student.name == name).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="名单中没有该学生")
+    student.is_active = True
+    db.commit()
+    return {"status": "ok", "reactivated": name}
+
+
+@app.post("/api/admin/answers/clear")
+def clear_all_records(payload: AdminClearRequest, db: Session = Depends(get_db)):
+    """一键清除：清空全部答题记录并重置完成进度（保留学生账号）。"""
+    if payload.admin_key != get_admin_key():
+        raise HTTPException(status_code=403, detail="管理口令错误")
+    cleared_answers = db.query(AnswerRecord).delete(synchronize_session=False)
+    cleared_progress = db.query(ProgressRecord).delete(synchronize_session=False)
+    db.commit()
+    return {"status": "ok", "cleared_answers": cleared_answers, "cleared_progress": cleared_progress}
+
+
 # ---------------------------------------------------------------------------
 # 统计查询接口
 # ---------------------------------------------------------------------------
@@ -268,6 +362,83 @@ def _attempt_key(attempt_count: int) -> str:
     """把尝试次数转换为分布键名，如 1->first_attempt、2->second_attempt。"""
     names = {1: "first_attempt", 2: "second_attempt", 3: "third_attempt"}
     return names.get(attempt_count, f"{attempt_count}th_attempt")
+
+
+@app.post("/api/progress/mark")
+def mark_progress(payload: ProgressMarkRequest, db: Session = Depends(get_db)):
+    """学生端标记/取消某一节完成。"""
+    _ensure_allowed_student(db, payload.student_name)
+    name = payload.student_name.strip()
+    existing = (
+        db.query(ProgressRecord)
+        .filter(ProgressRecord.student_name == name, ProgressRecord.scene_index == payload.scene_index)
+        .first()
+    )
+    if not payload.completed:
+        if existing:
+            db.delete(existing)
+            db.commit()
+        return {"status": "ok", "scene_index": payload.scene_index, "completed": False}
+    if existing:
+        existing.total_scenes = payload.total_scenes
+        existing.completed_at = datetime.now()
+    else:
+        db.add(ProgressRecord(student_name=name, scene_index=payload.scene_index, total_scenes=payload.total_scenes))
+    db.commit()
+    return {"status": "ok", "scene_index": payload.scene_index, "completed": True}
+
+
+@app.post("/api/progress/sync")
+def sync_progress(payload: ProgressSyncRequest, db: Session = Depends(get_db)):
+    """学生端全量同步：completed_scenes 之外的节视为未完成（用于登录后补传本地历史进度）。"""
+    _ensure_allowed_student(db, payload.student_name)
+    name = payload.student_name.strip()
+    target = set(payload.completed_scenes)
+    existing = db.query(ProgressRecord).filter(ProgressRecord.student_name == name).all()
+    existing_map = {r.scene_index: r for r in existing}
+    for idx, rec in existing_map.items():
+        if idx not in target:
+            db.delete(rec)
+    for idx in target:
+        rec = existing_map.get(idx)
+        if rec:
+            rec.total_scenes = payload.total_scenes
+            rec.completed_at = datetime.now()
+        else:
+            db.add(ProgressRecord(student_name=name, scene_index=idx, total_scenes=payload.total_scenes))
+    db.commit()
+    return {"status": "ok", "synced": len(target)}
+
+
+@app.get("/api/stats/progress")
+def stats_progress(db: Session = Depends(get_db)):
+    """每位学生的完成进度：已完成节数、总节数、完成率、最近更新时间。"""
+    total_scenes = db.query(func.max(ProgressRecord.total_scenes)).scalar() or 0
+    records = db.query(ProgressRecord).all()
+    done: dict[str, set[int]] = {}
+    latest: dict[str, datetime] = {}
+    for r in records:
+        done.setdefault(r.student_name, set()).add(r.scene_index)
+        if r.student_name not in latest or r.completed_at > latest[r.student_name]:
+            latest[r.student_name] = r.completed_at
+
+    result = []
+    for s in db.query(Student).order_by(Student.id).all():
+        completed_count = len(done.get(s.name, set()))
+        updated = latest.get(s.name)
+        result.append(
+            {
+                "student_name": s.name,
+                "is_active": s.is_active,
+                "completed_count": completed_count,
+                "total_scenes": total_scenes,
+                "completion_rate": _safe_accuracy(completed_count, total_scenes),
+                "updated_at": updated.isoformat(sep=" ", timespec="seconds") if updated else None,
+            }
+        )
+    # 固定按完成率降序排列（完成率相同时按姓名升序，保证顺序稳定）
+    result.sort(key=lambda x: (-x["completion_rate"], x["student_name"]))
+    return {"total_scenes": total_scenes, "students": result}
 
 
 @app.get("/api/stats/overview")
