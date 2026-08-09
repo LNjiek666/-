@@ -235,9 +235,19 @@ def test_stats_question_groups():
     assert q0["correct_count"] == 2 and q0["error_count"] == 0, f"李四改对后应记为正确，实际 {q0}"
     assert q0["accuracy"] == 100.0, f"正确率应为 100.0，实际 {q0}"
     assert q0["correct_answer"], "应返回正确答案"
+    assert q0["correct_students"] == ["李四", "王五"], f"正确名单应为李四、王五，实际 {q0['correct_students']}"
+    assert q0["wrong_students"] == [], f"错误名单应为空，实际 {q0['wrong_students']}"
     uncat = next((s for s in scenes if s.get("scene_index") is None), None)
     assert uncat and uncat["scene_title"] == "未分类", "应包含未分类分组"
     assert len(uncat["questions"]) == 3, f"未分类应为 3 道旧题目，实际 {len(uncat['questions'])}"
+    uq1 = next(q for q in uncat["questions"] if q["question_index"] == 1)
+    assert uq1["correct_students"] == ["张三"] and uq1["wrong_students"] == ["李四"], (
+        f"未分类第 1 题名单错误，实际 {uq1['correct_students']} / {uq1['wrong_students']}"
+    )
+    for scene in scenes:
+        for q in scene["questions"]:
+            assert len(q["correct_students"]) == q["correct_count"], f"正确名单人数不一致：{q}"
+            assert len(q["wrong_students"]) == q["error_count"], f"错误名单人数不一致：{q}"
     return f"scenes={len(scenes)}, scene2_q0={json.dumps(q0, ensure_ascii=False)}"
 
 

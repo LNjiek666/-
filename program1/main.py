@@ -546,6 +546,8 @@ def stats_question_groups(db: Session = Depends(get_db)):
             "correct_count": correct_count,
             "error_count": answer_count - correct_count,
             "accuracy": _safe_accuracy(correct_count, answer_count),
+            "correct_students": sorted(r.student_name for r in rows if r.is_correct),
+            "wrong_students": sorted(r.student_name for r in rows if not r.is_correct),
         }
 
     scenes = []

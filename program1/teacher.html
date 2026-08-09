@@ -1161,10 +1161,21 @@ function questionRowHtml(q) {
     '<td class="px-5 py-3.5 max-w-[360px] truncate text-[#4a4845] cursor-help" title="' + esc(tip) + '">' +
     esc(short(q.question_title || "未命名题目", 32)) + "</td>" +
     '<td class="px-5 py-3.5 text-center text-[#6b6760] whitespace-nowrap">' + Number(q.answer_count || 0) + " 人</td>" +
-    '<td class="px-5 py-3.5 text-center text-[#6f9a76] font-semibold whitespace-nowrap">' + Number(q.correct_count || 0) + " 人</td>" +
-    '<td class="px-5 py-3.5 text-center text-[#b06666] font-semibold whitespace-nowrap">' + Number(q.error_count || 0) + " 人</td>" +
+    countCellHtml(q.correct_count, q.correct_students, "答对", "#6f9a76") +
+    countCellHtml(q.error_count, q.wrong_students, "答错", "#b06666") +
     '<td class="px-5 py-3.5">' + accuracyBarHtml(acc) + "</td>" +
     "</tr>"
+  );
+}
+
+function countCellHtml(count, students, label, color) {
+  const n = Number(count || 0);
+  const names = (Array.isArray(students) ? students : []).filter(Boolean);
+  const tip = n > 0 && names.length ? label + "：" + names.join("、") : "";
+  const titleAttr = tip ? ' title="' + esc(tip) + '"' : "";
+  return (
+    '<td' + titleAttr + ' class="px-5 py-3.5 text-center text-[' + color + '] font-semibold whitespace-nowrap cursor-help">' +
+    n + " 人</td>"
   );
 }
 
