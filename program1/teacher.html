@@ -964,6 +964,7 @@ async function clearAllAnswers() {
 /* ---------- 完成进度统计 ---------- */
 
 let activeTab = "dashboard";
+let progressLoaded = false;
 
 function showTab(name) {
   activeTab = name;
@@ -998,16 +999,24 @@ async function loadProgress() {
   const tbody = document.getElementById("progressTbody");
   const empty = document.getElementById("progressEmpty");
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="5" class="px-5 py-10 text-center text-[#8d8b82] text-sm">正在加载完成进度…</td></tr>';
-  if (empty) empty.classList.add("hidden");
+  // 首次打开才显示加载态；30 秒自动刷新时静默更新，避免闪烁
+  if (!progressLoaded) {
+    tbody.innerHTML = '<tr><td colspan="5" class="px-5 py-10 text-center text-[#8d8b82] text-sm">正在加载完成进度…</td></tr>';
+    if (empty) empty.classList.add("hidden");
+  }
   try {
     const data = await fetchJSON(API_BASE + "/api/stats/progress");
     renderProgress(data);
+    progressLoaded = true;
   } catch (err) {
-    tbody.innerHTML =
-      '<tr><td colspan="5" class="px-5 py-10 text-center">' +
-      '<p class="text-[#b06666] text-sm mb-3">⚠️ 加载完成进度失败：' + esc(friendlyMessage(err)) + "</p>" +
-      '<button onclick="loadProgress()" class="bg-[#8d8b82] hover:bg-[#7c7a71] text-white text-sm px-4 py-2 rounded-xl transition">重试</button></td></tr>';
+    if (!progressLoaded) {
+      tbody.innerHTML =
+        '<tr><td colspan="5" class="px-5 py-10 text-center">' +
+        '<p class="text-[#b06666] text-sm mb-3">⚠️ 加载完成进度失败：' + esc(friendlyMessage(err)) + "</p>" +
+        '<button onclick="loadProgress()" class="bg-[#8d8b82] hover:bg-[#7c7a71] text-white text-sm px-4 py-2 rounded-xl transition">重试</button></td></tr>';
+    } else {
+      console.warn("完成进度刷新失败（保留旧数据，30 秒后重试）:", err);
+    }
   }
 }
 
@@ -1143,7 +1152,10 @@ document.getElementById("clearAnswersBtn").addEventListener("click", clearAllAns
 updateSortArrows();
 loadAllData(false);
 setInterval(() => {
-  if (!document.hidden) loadAllData(false);
+  if (!document.hidden) {
+    loadAllData(false);
+    if (activeTab === "progress") loadProgress();
+  }
 }, REFRESH_MS);
 </script>
 </body>
