@@ -11,7 +11,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -22,7 +22,7 @@ from models import AnswerRecord, Student
 
 # 学生端页面（改造后的互动课堂 HTML，服务根路径直接打开）
 BASE_DIR = Path(__file__).resolve().parent
-STUDENT_PAGE = BASE_DIR / "工程材料-材料的性能-互动课堂(莫兰迪)-上报版.html"
+STUDENT_PAGE = BASE_DIR / "student.html"
 
 DEFAULT_STUDENT_PASSWORD = "88888888"  # 新加入名单的学生默认密码
 
@@ -415,6 +415,12 @@ def index():
     return FileResponse(STUDENT_PAGE, media_type="text/html")
 
 
+@app.get("/student.html", include_in_schema=False)
+def student_html_page():
+    """兼容带 .html 后缀的链接（二维码 / 旧链接直接访问 /student.html）。"""
+    return FileResponse(STUDENT_PAGE, media_type="text/html")
+
+
 @app.get("/teacher", include_in_schema=False)
 def teacher_page():
     """在 /teacher 路径托管教师端数据看板页面。"""
@@ -428,35 +434,3 @@ if __name__ == "__main__":
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8000"))
     uvicorn.run(app, host=host, port=port)
-    from fastapi.responses import HTMLResponse
-import os
-
-# 读取HTML文件的通用函数
-def load_html(filename: str) -> str:
-    try:
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        file_path = os.path.join(base_dir, filename)
-        print(f"[DEBUG] 尝试加载文件: {file_path}")  # ← 加这一行
-        with open(file_path, "r", encoding="utf-8") as f:
-            return f.read()
-    except FileNotFoundError:
-        print(f"[ERROR] 文件未找到: {file_path}")  # ← 加这一行
-        return "<h1>❌ 页面未找到，请检查HTML文件是否已上传到项目根目录</h1>"
-    except Exception as e:
-        print(f"[ERROR] 加载失败: {str(e)}")  # ← 加这一行
-        return f"<h1>❌ 加载页面失败: {str(e)}</h1>"
-
-# 学生端首页
-@app.get("/", response_class=HTMLResponse)
-async def serve_student():
-    return load_html("工程材料-材料的性能-互动课堂(莫兰迪)-上报版.html")
-
-# 教师端（带口令验证）
-@app.get("/teacher", response_class=HTMLResponse)
-async def serve_teacher(key: str = ""):
-    admin_key = os.getenv("ADMIN_KEY")
-    if not admin_key:
-        return "<h2>⚠️ 服务端未配置ADMIN_KEY环境变量，请联系管理员</h2>"
-    if key != admin_key:
-        return "<h2>🔒 管理员口令错误，请重新输入</h2>"
-    return load_html("teacher.html")
