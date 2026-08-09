@@ -3,7 +3,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, UniqueConstraint
 
 from database import Base
 
@@ -35,3 +35,18 @@ class Student(Base):
     is_active = Column(Boolean, nullable=False, default=True)  # 是否在名单中（False 表示已停用）
     created_at = Column(DateTime, nullable=False, default=datetime.now)  # 创建时间
     updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now)  # 更新时间
+
+
+class ProgressRecord(Base):
+    """学生完成进度：每个学生每一节一条完成记录（学生端「标记本节完成」上报）。"""
+
+    __tablename__ = "progress_records"
+    __table_args__ = (
+        UniqueConstraint("student_name", "scene_index", name="uq_progress_student_scene"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    student_name = Column(String(50), nullable=False, index=True)
+    scene_index = Column(Integer, nullable=False, index=True)  # 第几节（从 0 开始）
+    total_scenes = Column(Integer, nullable=False, default=0)  # 课程总节数
+    completed_at = Column(DateTime, nullable=False, default=datetime.now)  # 完成时间
