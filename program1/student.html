@@ -1090,6 +1090,7 @@ async function login() {
     if (res.ok) {
       setStudentName(data.student_name || name);
       refreshStudentUI();
+      syncProgressFromLocal();
     } else {
       studentHint(data.detail || ("登录失败（" + res.status + "）"));
     }
@@ -1188,7 +1189,33 @@ function renderProgress() {
   document.getElementById("progressText").textContent = `已完成 ${done} / ${total}`;
   document.querySelectorAll(".nav-item").forEach((el, i) => el.classList.toggle("done", !!progress[i]));
 }
-function markDone(i, on) { progress[i] = on; saveProgress(); }
+function markDone(i, on) { progress[i] = on; saveProgress(); reportProgressSingle(i, on); }
+
+function reportProgressSingle(i, on) {
+  const name = getStudentName();
+  if (!name) return;
+  fetch(API_BASE + "/api/progress/mark", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ student_name: name, scene_index: i, total_scenes: COURSE.scenes.length, completed: !!on }),
+  }).catch(e => console.warn("进度上报失败:", e));
+}
+
+async function syncProgressFromLocal() {
+  const name = getStudentName();
+  if (!name) return;
+  const completed = [];
+  COURSE.scenes.forEach((_, i) => { if (progress[i]) completed.push(i); });
+  try {
+    await fetch(API_BASE + "/api/progress/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ student_name: name, total_scenes: COURSE.scenes.length, completed_scenes: completed }),
+    });
+  } catch (e) {
+    console.warn("进度同步失败:", e);
+  }
+}
 function renderNav() {
   const nav = document.getElementById("sceneNav"); nav.innerHTML = "";
   COURSE.scenes.forEach((s, i) => {
@@ -1473,7 +1500,7 @@ document.title = COURSE.title;
 refreshStudentUI();
 bindStudentGate();
 render();
+syncProgressFromLocal();
 </script>
 </body>
 </html>
-
