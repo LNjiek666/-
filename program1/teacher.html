@@ -47,12 +47,12 @@
   <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-3 flex-wrap">
     <h1 class="text-lg sm:text-2xl font-bold text-[#5f5d57] tracking-wide">📊 互动课堂 - 教师数据看板</h1>
     <div class="flex items-center gap-3">
-      <button id="adminToggleBtn" onclick="toggleAdminPanel()"
+      <button id="adminToggleBtn"
               class="inline-flex items-center gap-1.5 bg-white border border-[#e2dbd2] hover:border-[#c4a882] active:scale-95 transition text-[#6b6760] text-sm px-3.5 py-2 rounded-xl shadow-sm">
         <span>名单管理</span>
       </button>
       <span id="lastUpdated" class="text-xs sm:text-sm text-[#8d8b82]">最后更新：--</span>
-      <button id="refreshBtn" onclick="loadAllData(true)"
+      <button id="refreshBtn" onclick="refreshAll()"
               class="inline-flex items-center gap-1.5 bg-[#8d8b82] hover:bg-[#7c7a71] active:scale-95 transition text-white text-sm px-3.5 py-2 rounded-xl shadow-sm disabled:opacity-60 disabled:cursor-not-allowed">
         <span id="refreshIcon" class="inline-block w-4 h-4 leading-none">🔄</span>
         <span>刷新</span>
@@ -89,11 +89,36 @@
     <textarea id="rosterText" rows="4"
               placeholder="每行一个学生姓名，例如：&#10;张三&#10;李四&#10;王五&#10;（支持逗号、顿号、空格分隔）"
               class="w-full bg-[#f7f3ee] border border-[#e2dbd2] rounded-xl px-3 py-2 text-sm text-[#4a4845] placeholder-[#b5aca1] focus:outline-none focus:ring-2 focus:ring-[#c4a882]/50 focus:border-[#c4a882] transition"></textarea>
+    <div class="flex flex-wrap items-center gap-2 pt-1">
+      <button id="clearAnswersBtn"
+              class="bg-[#f6e3e0] hover:bg-[#ecc8c3] active:scale-95 transition text-[#a05f5f] text-sm px-3.5 py-2 rounded-xl shadow-sm">一键清除答题记录</button>
+      <span class="text-xs text-[#b5aca1]">清除全部学生的答题记录并重置完成进度（不可恢复，需二次确认）</span>
+    </div>
+    <div id="rosterTableWrap" class="hidden overflow-x-auto rounded-xl border border-[#f0eae2]">
+      <table class="w-full text-sm min-w-[420px]">
+        <thead>
+          <tr class="bg-[#f7f3ee] text-[#8d8b82] text-left">
+            <th class="px-3 py-2.5 font-medium">姓名</th>
+            <th class="px-3 py-2.5 font-medium">状态</th>
+            <th class="px-3 py-2.5 font-medium text-right">操作</th>
+          </tr>
+        </thead>
+        <tbody id="rosterTbody" class="divide-y divide-[#f0eae2]"></tbody>
+      </table>
+    </div>
     <div id="adminResult" class="hidden text-sm text-[#6b6760] whitespace-pre-line bg-[#f7f3ee] border border-[#e2dbd2] rounded-xl px-4 py-3"></div>
   </div>
 </section>
 
 <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+
+  <!-- 标签页切换 -->
+  <div class="flex items-center gap-2">
+    <button id="tabDashboardBtn" onclick="showTab('dashboard')" class="px-4 py-2 rounded-xl text-sm font-medium transition shadow-sm bg-[#8d8b82] text-white">数据看板</button>
+    <button id="tabProgressBtn" onclick="showTab('progress')" class="px-4 py-2 rounded-xl text-sm font-medium transition shadow-sm bg-white border border-[#e2dbd2] text-[#6b6760] hover:border-[#c4a882]">完成进度</button>
+  </div>
+
+  <section id="dashboardView" class="space-y-6">
 
   <!-- 数据概览卡片 -->
   <section id="overviewCards" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-5" aria-label="数据概览">
@@ -198,6 +223,51 @@
       </table>
       <div id="tableEmpty" class="hidden py-12 text-center text-[#b5aca1]">
         <p id="tableEmptyText" class="text-sm">暂无学生答题数据</p>
+      </div>
+    </div>
+  </section>
+  </section>
+
+  <!-- 完成进度统计 -->
+  <section id="progressView" class="hidden space-y-6">
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-5">
+      <div class="bg-white rounded-2xl shadow-sm border border-[#e8e1d9] p-5">
+        <p class="text-sm text-[#8d8b82]">平均完成率</p>
+        <p id="progressAvgRate" class="text-3xl font-bold text-[#4a4845] mt-1">--</p>
+        <p class="text-xs text-[#b5aca1] mt-1">全部学生完成率的平均值</p>
+      </div>
+      <div class="bg-white rounded-2xl shadow-sm border border-[#e8e1d9] p-5">
+        <p class="text-sm text-[#8d8b82]">已开始学生</p>
+        <p id="progressStarted" class="text-3xl font-bold text-[#4a4845] mt-1">--</p>
+        <p class="text-xs text-[#b5aca1] mt-1">至少完成 1 节的学生数</p>
+      </div>
+      <div class="bg-white rounded-2xl shadow-sm border border-[#e8e1d9] p-5">
+        <p class="text-sm text-[#8d8b82]">全部完成学生</p>
+        <p id="progressFinished" class="text-3xl font-bold text-[#4a4845] mt-1">--</p>
+        <p class="text-xs text-[#b5aca1] mt-1">已完成全部节数的学生数</p>
+      </div>
+    </div>
+    <div class="bg-white rounded-2xl shadow-sm border border-[#e8e1d9]">
+      <div class="flex flex-wrap items-center justify-between gap-3 p-5 border-b border-[#f0eae2]">
+        <h2 class="text-base sm:text-lg font-bold text-[#5f5d57]">学生完成进度明细</h2>
+        <span id="progressCount" class="text-xs text-[#8d8b82]">共 0 人</span>
+      </div>
+      <div id="progressTableWrap" class="overflow-x-auto">
+        <table class="w-full text-sm min-w-[760px]">
+          <thead class="bg-[#f7f3ee] text-[#8d8b82] text-left">
+            <tr>
+              <th class="px-5 py-3 font-medium">学生姓名</th>
+              <th class="px-5 py-3 font-medium">状态</th>
+              <th class="px-5 py-3 font-medium">已完成节数</th>
+              <th class="px-5 py-3 font-medium">完成进度</th>
+              <th class="px-5 py-3 font-medium">最近更新</th>
+            </tr>
+          </thead>
+          <tbody id="progressTbody" class="divide-y divide-[#f0eae2]"></tbody>
+        </table>
+      </div>
+      <div id="progressEmpty" class="hidden py-12 text-center text-[#b5aca1]">
+        <p id="progressEmptyText" class="text-sm">暂无学生数据</p>
       </div>
     </div>
   </section>
@@ -760,6 +830,237 @@ document.addEventListener("keydown", e => {
 
 /* ---------- 名单管理 ---------- */
 
+function rosterAdminKey() {
+  const key = (document.getElementById("adminKeyInput").value || "").trim();
+  if (!key) { adminHint("请先输入管理口令"); return null; }
+  return key;
+}
+
+function rosterActionHtml(s) {
+  const name = esc(s.name).replace(/'/g, "\\'");
+  const del = '<button onclick="deleteStudent(' + "'" + name + "'" + ')" title="永久删除账号及其答题记录、完成进度" ' +
+    'class="inline-flex items-center gap-1 bg-[#f6e3e0] hover:bg-[#ecc8c3] text-[#a05f5f] text-xs px-2.5 py-1.5 rounded-lg transition">删除</button>';
+  const toggle = s.is_active
+    ? '<button onclick="deactivateStudent(' + "'" + name + "'" + ')" title="移出名册（账号停用，数据保留）" ' +
+      'class="inline-flex items-center gap-1 bg-[#f1ece4] hover:bg-[#d9d0c5] text-[#6b6760] text-xs px-2.5 py-1.5 rounded-lg transition">移出名册</button>'
+    : '<button onclick="reactivateStudent(' + "'" + name + "'" + ')" title="重新加入名册（保留原密码）" ' +
+      'class="inline-flex items-center gap-1 bg-[#e8efe6] hover:bg-[#cfe0cb] text-[#6f9a76] text-xs px-2.5 py-1.5 rounded-lg transition">重新加入</button>';
+  return del + toggle;
+}
+
+function renderRosterTable(rows) {
+  const wrap = document.getElementById("rosterTableWrap");
+  const tbody = document.getElementById("rosterTbody");
+  if (!rows.length) {
+    wrap.classList.add("hidden");
+    showAdminResult("当前名单为空，请粘贴名单后点击「上传名单」。");
+    return;
+  }
+  tbody.innerHTML = rows.map(s => {
+    const status = s.is_active
+      ? '<span class="inline-flex items-center gap-1 bg-[#e8efe6] text-[#6f9a76] px-2 py-0.5 rounded-full text-xs font-medium">启用</span>'
+      : '<span class="inline-flex items-center gap-1 bg-[#f1ece4] text-[#8d8b82] px-2 py-0.5 rounded-full text-xs font-medium">停用</span>';
+    return (
+      "<tr class='hover:bg-[#faf7f3] transition'>" +
+      '<td class="px-3 py-2.5 font-medium text-[#4a4845]">' + esc(s.name) + "</td>" +
+      '<td class="px-3 py-2.5">' + status + "</td>" +
+      '<td class="px-3 py-2.5 text-right whitespace-nowrap">' + rosterActionHtml(s) + "</td>" +
+      "</tr>"
+    );
+  }).join("");
+  wrap.classList.remove("hidden");
+}
+
+async function deleteStudent(name) {
+  if (!window.confirm("确定删除学生「" + name + "」吗？\n该生的答题记录与完成进度将一并永久删除，无法恢复。")) return;
+  const key = rosterAdminKey();
+  if (!key) return;
+  adminHint("删除中…");
+  try {
+    const res = await fetch(API_BASE + "/api/admin/students/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ admin_key: key, student_name: name }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { adminHint(data.detail || ("删除失败（" + res.status + "）")); return; }
+    adminHint("已删除「" + name + "」", true);
+    showAdminResult("已删除学生「" + name + "」，同时删除答题记录 " + data.removed_answers + " 条、完成进度 " + data.removed_progress + " 条。");
+    viewRoster();
+    loadAllData(true);
+    if (activeTab === "progress") loadProgress();
+  } catch (e) {
+    adminHint("无法连接服务器，请确认后端已启动");
+    console.warn("删除学生失败:", e);
+  }
+}
+
+async function deactivateStudent(name) {
+  if (!window.confirm("确定将「" + name + "」移出名册吗？\n该生将无法登录答题，但已有数据会保留。")) return;
+  const key = rosterAdminKey();
+  if (!key) return;
+  adminHint("处理中…");
+  try {
+    const res = await fetch(API_BASE + "/api/admin/students/deactivate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ admin_key: key, student_name: name }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { adminHint(data.detail || ("操作失败（" + res.status + "）")); return; }
+    adminHint("已将「" + name + "」移出名册", true);
+    showAdminResult("已移出名册：「" + name + "」（账号停用，数据保留）。重新加入时保留原密码。");
+    viewRoster();
+  } catch (e) {
+    adminHint("无法连接服务器，请确认后端已启动");
+    console.warn("移出名册失败:", e);
+  }
+}
+
+async function reactivateStudent(name) {
+  const key = rosterAdminKey();
+  if (!key) return;
+  adminHint("处理中…");
+  try {
+    const res = await fetch(API_BASE + "/api/admin/students/reactivate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ admin_key: key, student_name: name }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { adminHint(data.detail || ("操作失败（" + res.status + "）")); return; }
+    adminHint("已将「" + name + "」重新加入名册", true);
+    showAdminResult("已重新加入：「" + name + "」（保留原密码）。");
+    viewRoster();
+  } catch (e) {
+    adminHint("无法连接服务器，请确认后端已启动");
+    console.warn("重新加入失败:", e);
+  }
+}
+
+async function clearAllAnswers() {
+  if (!window.confirm("确定清除全部学生的答题记录吗？\n完成进度也会一并重置，且无法恢复。")) return;
+  const key = rosterAdminKey();
+  if (!key) return;
+  adminHint("清除中…");
+  try {
+    const res = await fetch(API_BASE + "/api/admin/answers/clear", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ admin_key: key }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { adminHint(data.detail || ("清除失败（" + res.status + "）")); return; }
+    adminHint("已清除 " + data.cleared_answers + " 条答题记录、" + data.cleared_progress + " 条进度", true);
+    showAdminResult("一键清除完成：答题记录 " + data.cleared_answers + " 条、完成进度 " + data.cleared_progress + " 条已清空。");
+    loadAllData(true);
+    if (activeTab === "progress") loadProgress();
+  } catch (e) {
+    adminHint("无法连接服务器，请确认后端已启动");
+    console.warn("清除记录失败:", e);
+  }
+}
+
+/* ---------- 完成进度统计 ---------- */
+
+let activeTab = "dashboard";
+
+function showTab(name) {
+  activeTab = name;
+  const dash = document.getElementById("dashboardView");
+  const prog = document.getElementById("progressView");
+  const btnD = document.getElementById("tabDashboardBtn");
+  const btnP = document.getElementById("tabProgressBtn");
+  if (dash) dash.classList.toggle("hidden", name !== "dashboard");
+  if (prog) prog.classList.toggle("hidden", name !== "progress");
+  if (btnD) {
+    btnD.className = "px-4 py-2 rounded-xl text-sm font-medium transition shadow-sm " +
+      (name === "dashboard" ? "bg-[#8d8b82] text-white" : "bg-white border border-[#e2dbd2] text-[#6b6760] hover:border-[#c4a882]");
+  }
+  if (btnP) {
+    btnP.className = "px-4 py-2 rounded-xl text-sm font-medium transition shadow-sm " +
+      (name === "progress" ? "bg-[#8d8b82] text-white" : "bg-white border border-[#e2dbd2] text-[#6b6760] hover:border-[#c4a882]");
+  }
+  if (name === "progress") loadProgress();
+}
+
+function progressBarHtml(rate) {
+  const pct = Math.max(0, Math.min(100, Number(rate || 0)));
+  return (
+    '<div class="flex items-center gap-2 min-w-[150px]">' +
+    '<div class="flex-1 h-2 rounded-full bg-[#f0eae2] overflow-hidden">' +
+    '<div class="h-full rounded-full" style="width:' + pct + '%;background:#a8b5a0"></div></div>' +
+    '<span class="text-xs text-[#8d8b82] whitespace-nowrap w-12 text-right">' + pct.toFixed(1) + "%</span></div>"
+  );
+}
+
+async function loadProgress() {
+  const tbody = document.getElementById("progressTbody");
+  const empty = document.getElementById("progressEmpty");
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="5" class="px-5 py-10 text-center text-[#8d8b82] text-sm">正在加载完成进度…</td></tr>';
+  if (empty) empty.classList.add("hidden");
+  try {
+    const data = await fetchJSON(API_BASE + "/api/stats/progress");
+    renderProgress(data);
+  } catch (err) {
+    tbody.innerHTML =
+      '<tr><td colspan="5" class="px-5 py-10 text-center">' +
+      '<p class="text-[#b06666] text-sm mb-3">⚠️ 加载完成进度失败：' + esc(friendlyMessage(err)) + "</p>" +
+      '<button onclick="loadProgress()" class="bg-[#8d8b82] hover:bg-[#7c7a71] text-white text-sm px-4 py-2 rounded-xl transition">重试</button></td></tr>';
+  }
+}
+
+function renderProgress(data) {
+  const rows = (data && Array.isArray(data.students)) ? data.students : [];
+  const total = Number((data && data.total_scenes) || 0);
+  const tbody = document.getElementById("progressTbody");
+  const empty = document.getElementById("progressEmpty");
+  const emptyText = document.getElementById("progressEmptyText");
+
+  document.getElementById("progressAvgRate").textContent =
+    (rows.length ? (rows.reduce((s, r) => s + Number(r.completion_rate || 0), 0) / rows.length) : 0).toFixed(1) + "%";
+  document.getElementById("progressStarted").textContent = rows.filter(r => Number(r.completed_count || 0) > 0).length + " 人";
+  document.getElementById("progressFinished").textContent = total
+    ? rows.filter(r => Number(r.completed_count || 0) >= total).length + " 人" : "--";
+  document.getElementById("progressCount").textContent = "共 " + rows.length + " 人";
+
+  if (!rows.length) {
+    tbody.innerHTML = "";
+    if (empty) {
+      emptyText.textContent = "名单为空，请先在「名单管理」中上传学生名单。";
+      empty.classList.remove("hidden");
+    }
+    return;
+  }
+  if (empty) empty.classList.add("hidden");
+
+  tbody.innerHTML = rows.map(s => {
+    const rate = Number(s.completion_rate || 0);
+    const done = Number(s.completed_count || 0);
+    const status = s.is_active === false
+      ? '<span class="inline-flex items-center gap-1 bg-[#f1ece4] text-[#8d8b82] px-2 py-0.5 rounded-full text-xs font-medium">停用</span>'
+      : '<span class="inline-flex items-center gap-1 bg-[#e8efe6] text-[#6f9a76] px-2 py-0.5 rounded-full text-xs font-medium">启用</span>';
+    return (
+      "<tr class='hover:bg-[#faf7f3] transition'>" +
+      '<td class="px-5 py-3.5"><span class="flex items-center gap-2.5">' +
+      '<span class="w-8 h-8 rounded-full bg-[#efe8df] text-[#8d8b82] flex items-center justify-center text-xs font-semibold shrink-0">' +
+      esc(short(s.student_name, 1)) + "</span>" +
+      '<span class="font-medium text-[#4a4845]">' + esc(s.student_name) + "</span></span></td>" +
+      '<td class="px-5 py-3.5">' + status + "</td>" +
+      '<td class="px-5 py-3.5 text-[#6b6760]">' + done + " / " + (total || "--") + " 节</td>" +
+      '<td class="px-5 py-3.5">' + progressBarHtml(rate) + "</td>" +
+      '<td class="px-5 py-3.5 text-[#8d8b82] whitespace-nowrap">' + esc(s.updated_at || "尚未上报") + "</td>" +
+      "</tr>"
+    );
+  }).join("");
+}
+
+async function refreshAll() {
+  await loadAllData(true);
+  if (activeTab === "progress") loadProgress();
+}
+
 function toggleAdminPanel() {
   const panel = document.getElementById("adminPanel");
   if (panel) panel.classList.toggle("hidden");
@@ -820,8 +1121,9 @@ async function viewRoster() {
     if (res.ok) {
       adminHint("查询完成", true);
       const rows = data.students || [];
-      showAdminResult("当前名单（共 " + rows.length + " 人）：\n" +
-        rows.map(s => (s.is_active ? "启用 " : "停用 ") + s.name).join("\n"));
+      renderRosterTable(rows);
+      const inactive = rows.filter(s => !s.is_active).length;
+      showAdminResult("当前名单共 " + rows.length + " 人，其中停用 " + inactive + " 人。\n可在下方表格中删除学生、移出名册或重新加入；「上传名单」仍可批量新增/恢复。");
     } else {
       adminHint(data.detail || ("查询失败（" + res.status + "）"));
     }
@@ -834,6 +1136,7 @@ async function viewRoster() {
 document.getElementById("adminToggleBtn").addEventListener("click", toggleAdminPanel);
 document.getElementById("uploadRosterBtn").addEventListener("click", uploadRoster);
 document.getElementById("viewRosterBtn").addEventListener("click", viewRoster);
+document.getElementById("clearAnswersBtn").addEventListener("click", clearAllAnswers);
 
 /* ---------- 启动 ---------- */
 
