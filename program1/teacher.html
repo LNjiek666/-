@@ -99,7 +99,6 @@
         <thead>
           <tr class="bg-[#f7f3ee] text-[#8d8b82] text-left">
             <th class="px-3 py-2.5 font-medium">姓名</th>
-            <th class="px-3 py-2.5 font-medium">状态</th>
             <th class="px-3 py-2.5 font-medium text-right">操作</th>
           </tr>
         </thead>
@@ -258,7 +257,6 @@
           <thead class="bg-[#f7f3ee] text-[#8d8b82] text-left">
             <tr>
               <th class="px-5 py-3 font-medium">学生姓名</th>
-              <th class="px-5 py-3 font-medium">状态</th>
               <th class="px-5 py-3 font-medium">已完成节数</th>
               <th class="px-5 py-3 font-medium">完成进度</th>
               <th class="px-5 py-3 font-medium">最近更新</th>
@@ -864,14 +862,8 @@ function rosterAdminKey() {
 
 function rosterActionHtml(s) {
   const name = esc(s.name).replace(/'/g, "\\'");
-  const del = '<button onclick="deleteStudent(' + "'" + name + "'" + ')" title="永久删除账号及其答题记录、完成进度" ' +
+  return '<button onclick="deleteStudent(' + "'" + name + "'" + ')" title="永久删除账号及其答题记录、完成进度" ' +
     'class="inline-flex items-center gap-1 bg-[#f6e3e0] hover:bg-[#ecc8c3] text-[#a05f5f] text-xs px-2.5 py-1.5 rounded-lg transition">删除</button>';
-  const toggle = s.is_active
-    ? '<button onclick="deactivateStudent(' + "'" + name + "'" + ')" title="移出名册（账号停用，数据保留）" ' +
-      'class="inline-flex items-center gap-1 bg-[#f1ece4] hover:bg-[#d9d0c5] text-[#6b6760] text-xs px-2.5 py-1.5 rounded-lg transition">移出名册</button>'
-    : '<button onclick="reactivateStudent(' + "'" + name + "'" + ')" title="重新加入名册（保留原密码）" ' +
-      'class="inline-flex items-center gap-1 bg-[#e8efe6] hover:bg-[#cfe0cb] text-[#6f9a76] text-xs px-2.5 py-1.5 rounded-lg transition">重新加入</button>';
-  return del + toggle;
 }
 
 function renderRosterTable(rows) {
@@ -883,13 +875,9 @@ function renderRosterTable(rows) {
     return;
   }
   tbody.innerHTML = rows.map(s => {
-    const status = s.is_active
-      ? '<span class="inline-flex items-center gap-1 bg-[#e8efe6] text-[#6f9a76] px-2 py-0.5 rounded-full text-xs font-medium">启用</span>'
-      : '<span class="inline-flex items-center gap-1 bg-[#f1ece4] text-[#8d8b82] px-2 py-0.5 rounded-full text-xs font-medium">停用</span>';
     return (
       "<tr class='hover:bg-[#faf7f3] transition'>" +
       '<td class="px-3 py-2.5 font-medium text-[#4a4845]">' + esc(s.name) + "</td>" +
-      '<td class="px-3 py-2.5">' + status + "</td>" +
       '<td class="px-3 py-2.5 text-right whitespace-nowrap">' + rosterActionHtml(s) + "</td>" +
       "</tr>"
     );
@@ -918,49 +906,6 @@ async function deleteStudent(name) {
   } catch (e) {
     adminHint("无法连接服务器，请确认后端已启动");
     console.warn("删除学生失败:", e);
-  }
-}
-
-async function deactivateStudent(name) {
-  if (!window.confirm("确定将「" + name + "」移出名册吗？\n该生将无法登录答题，但已有数据会保留。")) return;
-  const key = rosterAdminKey();
-  if (!key) return;
-  adminHint("处理中…");
-  try {
-    const res = await fetch(API_BASE + "/api/admin/students/deactivate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ admin_key: key, student_name: name }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) { adminHint(data.detail || ("操作失败（" + res.status + "）")); return; }
-    adminHint("已将「" + name + "」移出名册", true);
-    showAdminResult("已移出名册：「" + name + "」（账号停用，数据保留）。重新加入时保留原密码。");
-    viewRoster();
-  } catch (e) {
-    adminHint("无法连接服务器，请确认后端已启动");
-    console.warn("移出名册失败:", e);
-  }
-}
-
-async function reactivateStudent(name) {
-  const key = rosterAdminKey();
-  if (!key) return;
-  adminHint("处理中…");
-  try {
-    const res = await fetch(API_BASE + "/api/admin/students/reactivate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ admin_key: key, student_name: name }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) { adminHint(data.detail || ("操作失败（" + res.status + "）")); return; }
-    adminHint("已将「" + name + "」重新加入名册", true);
-    showAdminResult("已重新加入：「" + name + "」（保留原密码）。");
-    viewRoster();
-  } catch (e) {
-    adminHint("无法连接服务器，请确认后端已启动");
-    console.warn("重新加入失败:", e);
   }
 }
 
@@ -1035,7 +980,7 @@ async function loadProgress() {
   if (!tbody) return;
   // 首次打开才显示加载态；30 秒自动刷新时静默更新，避免闪烁
   if (!progressLoaded) {
-    tbody.innerHTML = '<tr><td colspan="5" class="px-5 py-10 text-center text-[#8d8b82] text-sm">正在加载完成进度…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="4" class="px-5 py-10 text-center text-[#8d8b82] text-sm">正在加载完成进度…</td></tr>';
     if (empty) empty.classList.add("hidden");
   }
   try {
@@ -1045,7 +990,7 @@ async function loadProgress() {
   } catch (err) {
     if (!progressLoaded) {
       tbody.innerHTML =
-        '<tr><td colspan="5" class="px-5 py-10 text-center">' +
+      '<tr><td colspan="4" class="px-5 py-10 text-center">' +
         '<p class="text-[#b06666] text-sm mb-3">⚠️ 加载完成进度失败：' + esc(friendlyMessage(err)) + "</p>" +
         '<button onclick="loadProgress()" class="bg-[#8d8b82] hover:bg-[#7c7a71] text-white text-sm px-4 py-2 rounded-xl transition">重试</button></td></tr>';
     } else {
@@ -1081,16 +1026,12 @@ function renderProgress(data) {
   tbody.innerHTML = rows.map(s => {
     const rate = Number(s.completion_rate || 0);
     const done = Number(s.completed_count || 0);
-    const status = s.is_active === false
-      ? '<span class="inline-flex items-center gap-1 bg-[#f1ece4] text-[#8d8b82] px-2 py-0.5 rounded-full text-xs font-medium">停用</span>'
-      : '<span class="inline-flex items-center gap-1 bg-[#e8efe6] text-[#6f9a76] px-2 py-0.5 rounded-full text-xs font-medium">启用</span>';
     return (
       "<tr class='hover:bg-[#faf7f3] transition'>" +
       '<td class="px-5 py-3.5"><span class="flex items-center gap-2.5">' +
       '<span class="w-8 h-8 rounded-full bg-[#efe8df] text-[#8d8b82] flex items-center justify-center text-xs font-semibold shrink-0">' +
       esc(short(s.student_name, 1)) + "</span>" +
       '<span class="font-medium text-[#4a4845]">' + esc(s.student_name) + "</span></span></td>" +
-      '<td class="px-5 py-3.5">' + status + "</td>" +
       '<td class="px-5 py-3.5 text-[#6b6760]">' + done + " / " + (total || "--") + " 节</td>" +
       '<td class="px-5 py-3.5">' + progressBarHtml(rate) + "</td>" +
       '<td class="px-5 py-3.5 text-[#8d8b82] whitespace-nowrap">' + esc(s.updated_at || "尚未上报") + "</td>" +
@@ -1244,7 +1185,7 @@ async function uploadRoster() {
         "新增（默认密码 88888888）：" + (data.created.length ? data.created.join("、") : "无") +
         "\n重新加入（密码重置）：" + (data.reactivated.length ? data.reactivated.join("、") : "无") +
         "\n保留原密码：" + (data.kept.length ? data.kept.join("、") : "无") +
-        "\n已停用：" + (data.deactivated.length ? data.deactivated.join("、") : "无") +
+        "\n已移除（删除）：" + (data.removed.length ? data.removed.join("、") : "无") +
         "\n当前名单人数：" + data.active_count
       );
     } else {
@@ -1267,8 +1208,7 @@ async function viewRoster() {
       adminHint("查询完成", true);
       const rows = data.students || [];
       renderRosterTable(rows);
-      const inactive = rows.filter(s => !s.is_active).length;
-      showAdminResult("当前名单共 " + rows.length + " 人，其中停用 " + inactive + " 人。\n可在下方表格中删除学生、移出名册或重新加入；「上传名单」仍可批量新增/恢复。");
+      showAdminResult("当前名单共 " + rows.length + " 人。\n可在下方表格中删除学生（连同其答题记录和完成进度）；重新上传名单时，不在名单中的学生也会被直接删除。");
     } else {
       adminHint(data.detail || ("查询失败（" + res.status + "）"));
     }

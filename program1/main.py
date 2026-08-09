@@ -242,7 +242,7 @@ def change_password(payload: ChangePasswordRequest, db: Session = Depends(get_db
 @app.post("/api/admin/students")
 def upload_roster(payload: RosterUploadRequest, db: Session = Depends(get_db)):
     """教师上传学生名单：新学生默认密码 88888888；已停用学生重新加入时重置为默认密码；
-    已在名单中的学生保留原密码；不在本次名单中的学生将被停用（答题记录保留）。"""
+    已在名单中的学生保留原密码；不在本次名单中的学生将被直接删除（连同答题记录和完成进度，不保留在池内）。"""
     if payload.admin_key != get_admin_key():
         raise HTTPException(status_code=403, detail="管理口令错误")
 
@@ -267,11 +267,14 @@ def upload_roster(payload: RosterUploadRequest, db: Session = Depends(get_db)):
             kept.append(name)
 
     name_set = set(names)
-    deactivated: list[str] = []
-    for student in db.query(Student).filter(Student.is_active.is_(True)).all():
+    removed: list[str] = []
+    # 不再保留停用学生：不在本次名单中的学生（含历史停用）直接删除，并清理其答题记录和进度
+    for student in db.query(Student).order_by(Student.id).all():
         if student.name not in name_set:
-            student.is_active = False
-            deactivated.append(student.name)
+            db.query(AnswerRecord).filter(AnswerRecord.student_name == student.name).delete(synchronize_session=False)
+            db.query(ProgressRecord).filter(ProgressRecord.student_name == student.name).delete(synchronize_session=False)
+            removed.append(student.name)
+            db.delete(student)
 
     db.commit()
     return {
@@ -279,14 +282,14 @@ def upload_roster(payload: RosterUploadRequest, db: Session = Depends(get_db)):
         "created": created,
         "reactivated": reactivated,
         "kept": kept,
-        "deactivated": deactivated,
+        "removed": removed,
         "active_count": len(names),
     }
 
 
 @app.get("/api/admin/students")
 def list_students(admin_key: str, db: Session = Depends(get_db)):
-    """教师查看当前名单（含停用学生）。"""
+    """教师查看当前名单（停用学生已不再保留，全部为启用状态）。"""
     if admin_key != get_admin_key():
         raise HTTPException(status_code=403, detail="管理口令错误")
     rows = db.query(Student).order_by(Student.id).all()
@@ -316,34 +319,6 @@ def delete_student(payload: AdminStudentActionRequest, db: Session = Depends(get
         "removed_answers": removed_answers,
         "removed_progress": removed_progress,
     }
-
-
-@app.post("/api/admin/students/deactivate")
-def deactivate_student(payload: AdminStudentActionRequest, db: Session = Depends(get_db)):
-    """移出名册：停用账号、保留数据，该生无法登录答题。"""
-    if payload.admin_key != get_admin_key():
-        raise HTTPException(status_code=403, detail="管理口令错误")
-    name = payload.student_name.strip()
-    student = db.query(Student).filter(Student.name == name).first()
-    if not student:
-        raise HTTPException(status_code=404, detail="名单中没有该学生")
-    student.is_active = False
-    db.commit()
-    return {"status": "ok", "deactivated": name}
-
-
-@app.post("/api/admin/students/reactivate")
-def reactivate_student(payload: AdminStudentActionRequest, db: Session = Depends(get_db)):
-    """重新加入名册：恢复登录（保留原密码）。"""
-    if payload.admin_key != get_admin_key():
-        raise HTTPException(status_code=403, detail="管理口令错误")
-    name = payload.student_name.strip()
-    student = db.query(Student).filter(Student.name == name).first()
-    if not student:
-        raise HTTPException(status_code=404, detail="名单中没有该学生")
-    student.is_active = True
-    db.commit()
-    return {"status": "ok", "reactivated": name}
 
 
 @app.post("/api/admin/answers/clear")
